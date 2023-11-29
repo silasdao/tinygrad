@@ -20,8 +20,8 @@ def helper_test_compile(prg:str) -> bytes:
 
 class TestKernelCache(unittest.TestCase):
   def test_compile_cache(self):
-    prg1 = generate_random_string(64) + "a"
-    prg2 = generate_random_string(64) + "b"
+    prg1 = f"{generate_random_string(64)}a"
+    prg2 = f"{generate_random_string(64)}b"
     cold_compile_res = helper_test_compile(prg1)
     warm_compile_res = helper_test_compile(prg1)
     assert cold_compile_res == warm_compile_res == prg1.encode()

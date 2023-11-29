@@ -81,12 +81,10 @@ def uops_to_llvm_ir(function_name:str, uops:List[UOp]) -> Tuple[str, Dict]:
   bb = [ir.IRBuilder(func.append_basic_block("entry"))]
   loop_blocks: List = []
   reduce_phis: List = []
-  # TODO: newvar probably shouldn't be optional
-  lvars: Dict[Optional[UOp], Any] = {}  # this Any is an llvm type
-
-  for bufname,dtype in buf_to_dtype.items():
-    if dtype == dtypes._arg_int32: lvars[bufname] = bb[-1].sext(func.args[buf_index[bufname]], ir.IntType(32))
-
+  lvars: Dict[Optional[UOp], Any] = {
+      bufname: bb[-1].sext(func.args[buf_index[bufname]], ir.IntType(32))
+      for bufname, dtype in buf_to_dtype.items() if dtype == dtypes._arg_int32
+  }
   for u in uops:
     uop,dtype,vin,args = u.uop,u.dtype,u.vin,u.arg
     if uop == UOps.LOOP:

@@ -33,7 +33,7 @@ class TinyJit:
 
     # get rawbuffers
     input_rawbuffers: Dict[Union[int, str], Tuple[RawBuffer, ShapeTracker]] = {k:(cast(RawBuffer, v.lazydata.realized), v.lazydata.st) for k,v in input_tensors.items()}
-    assert len(input_rawbuffers) != 0, "no inputs to JIT"
+    assert input_rawbuffers, "no inputs to JIT"
     assert len(set(input_rawbuffers.values())) == len(input_rawbuffers), "duplicate inputs to JIT"
 
     # get variables: they can either be in Tensors or passed in as arguments, and all must be bound. these are all global
@@ -57,7 +57,9 @@ class TinyJit:
         for i,a in enumerate(ji.rawbufs):
           if a in [v[0] for v in input_rawbuffers.values()]:
             self.input_replace[(j,i)] = [(k, v[1].unbind(), v[0].dtype) for k,v in input_rawbuffers.items() if v[0] == a][0]
-      assert set([x[0] for x in self.input_replace.values()]) == set(input_rawbuffers.keys()), "some input tensors not found"
+      assert {x[0]
+              for x in self.input_replace.values()
+              } == set(input_rawbuffers.keys()), "some input tensors not found"
     elif self.cnt == 0:
       self.ret = self.fxn(*args, **kwargs)
 

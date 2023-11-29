@@ -69,10 +69,11 @@ class CUDAProgram:
     if DEBUG >= 6:
       try:
         fn = (Path(tempfile.gettempdir()) / f"tinycuda_{hashlib.md5(prg.encode('utf-8')).hexdigest()}").as_posix()
-        with open(fn + ".ptx", "wb") as f: f.write(prg.encode('utf-8'))
-        subprocess.run(["ptxas", f"-arch={arch()}", "-o", fn, fn+".ptx"], check=True)
+        with open(f"{fn}.ptx", "wb") as f: f.write(prg.encode('utf-8'))
+        subprocess.run(["ptxas", f"-arch={arch()}", "-o", fn, f"{fn}.ptx"], check=True)
         print(subprocess.check_output(['nvdisasm', fn]).decode('utf-8'))
-      except Exception as e: print("failed to generate SASS", str(e))
+      except Exception as e:
+        print("failed to generate SASS", e)
     # TODO: name is wrong, so we get it from the ptx using hacks
     self.prg = cuda.module_from_buffer(prg.encode('utf-8')).get_function(prg.split(".visible .entry ")[1].split("(")[0])
 
@@ -91,5 +92,16 @@ if getenv("TRITON") == 1:
   CUDABuffer = Compiled(RawCUDABuffer, LinearizerOptions(supports_float4=False, supports_float4_alu=False, global_max = [65535, 65535, 2147483647], local_max = [64, 1024, 1024], has_shared=False),
                         uops_to_triton, lambda x: x.encode('utf-8'), CUDAProgram, cuda.Context.synchronize)
 else:
-  CUDABuffer = Compiled(RawCUDABuffer, LinearizerOptions(supports_float4=False if getenv("PTX") else True, supports_float4_alu=False, global_max = [65535, 65535, 2147483647], local_max = [64, 1024, 1024]),
-                        CUDARenderer, compile_cuda, CUDAProgram, cuda.Context.synchronize)
+  CUDABuffer = Compiled(
+      RawCUDABuffer,
+      LinearizerOptions(
+          supports_float4=not getenv("PTX"),
+          supports_float4_alu=False,
+          global_max=[65535, 65535, 2147483647],
+          local_max=[64, 1024, 1024],
+      ),
+      CUDARenderer,
+      compile_cuda,
+      CUDAProgram,
+      cuda.Context.synchronize,
+  )

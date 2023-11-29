@@ -41,14 +41,14 @@ def kstest(l1, l2):
       d = dtemp
   ne = float(n1 * n2) / float(n1 + n2)
   nesq = math.sqrt(ne)
-  prob = ksprob((nesq + 0.12 + 0.11 / nesq) * d)
-  return prob
+  return ksprob((nesq + 0.12 + 0.11 / nesq) * d)
 
 def equal_distribution(tiny_func, torch_func=None, numpy_func=None, shape=(20, 23), alpha=0.05):
   Tensor.manual_seed(1337)
   torch.manual_seed(1337)
   np.random.seed(1337)
-  assert not (torch_func is None and numpy_func is None), "no function to compare with"
+  assert (torch_func is not None
+          or numpy_func is not None), "no function to compare with"
   x = tiny_func(*shape).numpy().flatten()
   if numpy_func is not None: y = numpy_func(shape).flatten()
   if torch_func is not None: z = torch_func(shape).numpy().flatten()

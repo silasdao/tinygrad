@@ -90,7 +90,8 @@ class Transformer:
 
   # TODO: fix empty token
   def __call__(self, tokens:Tensor, start_pos:Variable, temperature:float=0.0):
-    return (self.forward_jit if tokens.shape[0:2] == (1,1) and getenv("JIT") else self.forward)(tokens, start_pos, temperature)
+    return (self.forward_jit if tokens.shape[:2] == (1, 1) and getenv("JIT") else
+            self.forward)(tokens, start_pos, temperature)
 
 VOCAB_SIZE = 50257
 MODEL_PARAMS = {
@@ -125,7 +126,7 @@ class GPT2:
   def greedy_until(self, prompt:str, max_length:int, temperature:float, timing:bool=False):
     toks = self.tokenizer.encode(prompt, allowed_special={"<|endoftext|>"})
     start_pos = 0
-    for _ in trange(max_length, disable=(timing==True)):
+    for _ in trange(max_length, disable=timing):
       GlobalCounters.reset()
       if timing: print("")
       st = GlobalCounters.time_sum_s

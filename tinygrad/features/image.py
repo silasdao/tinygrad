@@ -10,9 +10,9 @@ def image_dot(self, w):
   n1, n2 = len(self.shape), len(w.shape)
   assert n1 != 0 and n2 != 0, f"both arguments to matmul need to be at least 1D, but they are {n1}D and {n2}D"
   assert self.shape[-1] == w.shape[-min(n2, 2)], f"Input Tensor shapes {self.shape} and {w.shape} cannot be multiplied ({self.shape[-1]} != {w.shape[-min(n2, 2)]})"
-  bs, groups = prod(self.shape[0:-2]), prod(w.shape[0:-2])
+  bs, groups = prod(self.shape[:-2]), prod(w.shape[:-2])
   cin, cout = w.shape[-2], w.shape[-1]
-  out_shape_t = self.shape[0:-2] + (cout,-1)
+  out_shape_t = self.shape[:-2] + (cout,-1)
   if len(self.shape) > 1:
     order = tuple(range(len(self.shape)-2)) + (len(self.shape)-1, len(self.shape)-2)
   else:
@@ -34,7 +34,7 @@ def image_conv2d(self, weight, bias=None, groups=1, stride=1, dilation=1, paddin
   x, w = self, weight.reshape(groups, rcout, cin, H, W)
 
   # hack for non multiples of 4 on cin
-  if cin % 4 != 0 and not (cin == 1 and groups%4 == 0):
+  if cin % 4 != 0 and (cin != 1 or groups % 4 != 0):
     x = x.reshape(bs, groups, cin, iy, ix)   # do this always?
     added_input_channels = 4 - (cin % 4)
     w = w.pad(tuple((0, added_input_channels) if i == 2 else (0, 0) for i in range(len(w.shape))))
@@ -44,7 +44,7 @@ def image_conv2d(self, weight, bias=None, groups=1, stride=1, dilation=1, paddin
 
   # hack for non multiples of 4 on rcout
   added_output_channels = 0
-  if rcout % 4 != 0 and not (rcout == 1 and groups%4 == 0):
+  if rcout % 4 != 0 and (rcout != 1 or groups % 4 != 0):
     added_output_channels = 4 - (rcout % 4)
     rcout += added_output_channels
     cout = groups * rcout
@@ -76,7 +76,8 @@ def image_conv2d(self, weight, bias=None, groups=1, stride=1, dilation=1, paddin
   # prepare input
   x = x.permute(0,3,4,5,1,2)._pool((H, W), stride, dilation) # -> (bs, groups, rcin_hi, rcin_lo, oy, ox, H, W)
   oy, ox = x.shape[4:6]
-  x = x.permute(0,4,5,1,2,3,6,7).reshape(bs, oy, ox, *cout_expand[0:2], 1, 1, rcin_hi, rcin_lo, H, W)
+  x = x.permute(0, 4, 5, 1, 2, 3, 6, 7).reshape(bs, oy, ox, *cout_expand[:2],
+                                                1, 1, rcin_hi, rcin_lo, H, W)
   x = x.expand(bs, oy, ox, *cout_expand, rcin_hi, rcin_lo, H, W)
 
   # prepare weights
@@ -107,12 +108,15 @@ def fix_schedule_for_images(schedule:List[ScheduleItem]):
   # this is the fundamental fix, find unwritable or unreadable images and convert them to normal float32 (TODO: should it be float16?)
   replace_inputs = {}
   for i, si in enumerate(schedule):
-    if isinstance(si.out.dtype, ImageDType) and (prod(si.out.shape) != prod(si.out.dtype.shape) or not any(si.out.shape[x]%4 == 0 for x in si.out.st.unit_stride_axes())):
+    if isinstance(si.out.dtype, ImageDType) and (prod(si.out.shape) != prod(
+        si.out.dtype.shape) or all(si.out.shape[x] % 4 != 0
+                                   for x in si.out.st.unit_stride_axes())):
       if DEBUG >= 1: print(f"{i:3d}: rewrite output, output shape {prod(si.out.shape)}, image dtype {si.out.dtype} prod {prod(si.out.dtype.shape)}")
       si.out.dtype = dtypes.float32
     for b in si.ast.get_lazyops():
       if b.op != BufferOps.MEM: continue
-      if isinstance(si.inputs[b.arg.idx-1].dtype, ImageDType) and not any(b.arg.st.shape[x]%4 == 0 for x in b.arg.st.unit_stride_axes()):
+      if isinstance(si.inputs[b.arg.idx - 1].dtype, ImageDType) and all(
+          b.arg.st.shape[x] % 4 != 0 for x in b.arg.st.unit_stride_axes()):
         if DEBUG >= 1: print(f"{i:3d}: rewrite input, image dtype {si.inputs[b.arg.idx-1].dtype}, {b.arg.st.views}")
         if si.inputs[b.arg.idx-1].realized:
           # have to copy it
@@ -168,7 +172,7 @@ def to_image_idx(base_shape:Tuple[int, ...], idxy:Node, valid:Node) -> Tuple[Tup
       assert isinstance(node, LtNode)
       node_flat, node_vars = node.a.flat_components if isinstance(node.a, SumNode) else [node.a], node.vars()
       same_sym = [i for (i, var) in idxy_flat_var if var in node_vars]
-      if len(same_sym) == 0: continue
+      if not same_sym: continue
       first, second = sorted(same_sym)[0], sorted(node_flat)[0]
       f_b = 1 if isinstance(first, Variable) else first.b
       s_b = 1 if isinstance(second, Variable) else second.b
@@ -179,14 +183,14 @@ def to_image_idx(base_shape:Tuple[int, ...], idxy:Node, valid:Node) -> Tuple[Tup
 
     fakes = {}
     for cnt, (key_node, (mnn, mxn, multip)) in enumerate(val_dict.items()):
-      fake_var = Variable("fake_" + str(cnt), mnn, mxn)
+      fake_var = Variable(f"fake_{str(cnt)}", mnn, mxn)
       fakes[fake_var] = key_node
       idxy += multip*(fake_var - key_node)
 
     idx = (idxy // 4) % base_shape[1]
     idy = (idxy // (4 * base_shape[1]))
 
-    fake_rep = {fake: node for fake, node in fakes.items()}
+    fake_rep = dict(fakes)
 
     idx = idx.substitute(fake_rep)
     idy = idy.substitute(fake_rep)

@@ -30,14 +30,19 @@ class UOp:
   def __repr__(self): return f"{str(self.uop):20s}: {str(self.dtype) if self.dtype is not None else '':25s} {str([x.uop for x in self.vin]):32s} {self.arg}"
 
 def get_grouped_dims(prefix, start_dim, local_dims, maxdim:int=0):
-  local_idxs = loop_local_idxs = [Variable(f"{prefix}{start_dim+i}", 0, s-1) for i,s in enumerate(local_dims[0:maxdim-1] + (prod(local_dims[maxdim-1:]),) if len(local_dims) > maxdim else local_dims)]
+  local_idxs = loop_local_idxs = [
+      Variable(f"{prefix}{start_dim+i}", 0, s - 1)
+      for i, s in enumerate(local_dims[:maxdim - 1] +
+                            (prod(local_dims[maxdim - 1:]), )
+                            if len(local_dims) > maxdim else local_dims)
+  ]
   if maxdim != 0 and len(local_dims) > maxdim:
     dd = local_idxs[maxdim-1]
     nli = []
     for s in local_dims[maxdim-1:][::-1]:
       nli.append(dd % s)
       dd //= s
-    local_idxs = local_idxs[0:maxdim-1] + nli[::-1]
+    local_idxs = local_idxs[:maxdim-1] + nli[::-1]
   return local_idxs, [x for x in loop_local_idxs if not isinstance(x, NumNode)]
 
 class Linearizer(Kernel):
@@ -64,10 +69,12 @@ class Linearizer(Kernel):
 
     amt, dim = 1, None
     upcast_dim = self.get_upcast_dim(i)
-    if len(upcast_dim) == 1 and len(float4_expand := idxs[upcast_dim[0]].expand()) in [4,2]:
+    if len(upcast_dim) == 1 and len(
+        float4_expand := idxs[upcast_dim[0]].expand()) in {4, 2}:
       dim, amt = upcast_dim[0], len(float4_expand)
 
-    expand_vars = tuple([rename_var(idx.expand_idx(), f"_uidx{j}") for j, idx in enumerate(idxs)])
+    expand_vars = tuple(
+        rename_var(idx.expand_idx(), f"_uidx{j}") for j, idx in enumerate(idxs))
     fake_idxs = [idx.substitute({idx.expand_idx(): ev}) for idx, ev in zip(idxs, expand_vars)]
     if dim is not None:
       g_idx, g_valid = self.sts[i].expr_idxs(fake_idxs[:dim] + [float4_expand[0]] + fake_idxs[dim+1:])
@@ -121,7 +128,7 @@ class Linearizer(Kernel):
 
     # float4 grouping
     upcast_dim = self.get_upcast_dim(i)
-    if len(upcast_dim) == 1 and len(expanded_nodes[upcast_dim[0]]) in [2,4]:
+    if len(upcast_dim) == 1 and len(expanded_nodes[upcast_dim[0]]) in {2, 4}:
       grouped_store_offset = defaultdict(list)
       for k in store_offset:
         _idx = k[:upcast_dim[0]] + (expanded_nodes[upcast_dim[0]][0],) + k[upcast_dim[0]+1:]
@@ -189,7 +196,8 @@ class Linearizer(Kernel):
 
     # name the function something unique
     Linearizer.kernel_cnt[self.function_name] += 1
-    suffix = f"{'n'+str(Linearizer.kernel_cnt[self.function_name]-1)}" if Linearizer.kernel_cnt[self.function_name] > 1 else ""
+    suffix = (f"{f'n{str(Linearizer.kernel_cnt[self.function_name] - 1)}'}"
+              if Linearizer.kernel_cnt[self.function_name] > 1 else "")
     self.function_name, self.display_name = self.function_name+suffix, self.display_name+colored(suffix, 'BLACK')
 
     # define indexes
@@ -375,7 +383,7 @@ class Linearizer(Kernel):
       return list(ret)
 
     def get_recursive_children(x:UOp) -> List[UOp]:
-      deps = set([x])
+      deps = {x}
       ssize = 0
       while ssize != len(deps):
         ssize = len(deps)
@@ -397,7 +405,9 @@ class Linearizer(Kernel):
         if u.uop == UOps.PHI and len(u.vin) == 3:
           # if the parents of the PHI node don't have the LOOP in their parents, it can be folded
           # TODO: ADD becomes a MUL, MAX can just become nothing
-          if all(x.uop != UOps.LOOP for x in get_recursive_parents(list(u.vin[0:2]))) and u.vin[1].arg == BinaryOps.ADD:
+          if (all(x.uop != UOps.LOOP
+                  for x in get_recursive_parents(list(u.vin[:2])))
+              and u.vin[1].arg == BinaryOps.ADD):
             if DEBUG >= 4: print(f"removing PHI node {u}")
             del self.saved_exprs[(u.uop, u.dtype, u.vin, u.arg)]
             # NOTE: assuming u.vin[2].vin[1] and u.vin[2].vin[0] have the same dtype

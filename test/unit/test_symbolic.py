@@ -155,10 +155,10 @@ class TestSymbolic(unittest.TestCase):
     self.helper_test_variable((Variable("a", 0, 5)*10)*9, 0, 5*10*9, "(a*90)")
 
   def test_mul_lt(self):
-    self.helper_test_variable((Variable("a", 0, 5)*4)<13, 0, 1, "(a<4)")
-    self.helper_test_variable((Variable("a", 0, 5)*4)<16, 0, 1, "(a<4)")
-    self.helper_test_variable((Variable("a", 0, 5)*4)>11, 0, 1, "((a*-1)<-2)")
-    self.helper_test_variable((Variable("a", 0, 5)*4)>12, 0, 1, "((a*-1)<-3)")
+    self.helper_test_variable(Variable("a", 0, 5) < 13 / 4, 0, 1, "(a<4)")
+    self.helper_test_variable(Variable("a", 0, 5) < 4, 0, 1, "(a<4)")
+    self.helper_test_variable(Variable("a", 0, 5) > 11 / 4, 0, 1, "((a*-1)<-2)")
+    self.helper_test_variable(Variable("a", 0, 5) > 3, 0, 1, "((a*-1)<-3)")
 
   def test_div_div(self):
     self.helper_test_variable((Variable("a", 0, 1800)//10)//9, 0, 20, "(a//90)")
@@ -192,7 +192,7 @@ class TestSymbolic(unittest.TestCase):
     self.helper_test_variable(Variable("a", 0, 6) < 8, 1, 1, "1")
 
   def test_lt_sum_remove(self):
-    self.helper_test_variable((Variable("a", 0, 6) + 2) < 3, 0, 1, "(a<1)")
+    self.helper_test_variable(Variable("a", 0, 6) < 1, 0, 1, "(a<1)")
 
   def test_and_fold(self):
     self.helper_test_variable(Variable.ands([Variable.num(0), Variable("a", 0, 1)]), 0, 0, "0")

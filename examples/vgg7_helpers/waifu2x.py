@@ -122,8 +122,11 @@ class Vgg7:
     """
     Downloads a nagadomi/waifu2x JSON weight file and loads it.
     """
-    fn = Path(__file__).parents[2] / ("weights/vgg_7_" + intent + "_" + subtype + "_model.json")
-    download_file("https://github.com/nagadomi/waifu2x/raw/master/models/vgg_7/" + intent + "/" + subtype + "_model.json", fn)
+    fn = Path(__file__).parents[2] / f"weights/vgg_7_{intent}_{subtype}_model.json"
+    download_file(
+        f"https://github.com/nagadomi/waifu2x/raw/master/models/vgg_7/{intent}/{subtype}_model.json",
+        fn,
+    )
 
     import json
     with open(fn, "rb") as f:

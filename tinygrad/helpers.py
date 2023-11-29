@@ -26,7 +26,13 @@ def flatten(l:Union[List, Iterator]): return [item for sublist in l for item in 
 def fromimport(mod, frm): return getattr(__import__(mod, fromlist=[frm]), frm)
 def strip_parens(fst): return fst[1:-1] if fst[0] == '(' and fst[-1] == ')' and fst[1:-1].find('(') <= fst[1:-1].find(')') else fst
 def merge_dicts(ds:Iterable[Dict]) -> Dict:
-  assert len(kvs:=set([(k,v) for d in ds for k,v in d.items()])) == len(set(kv[0] for kv in kvs)), f"cannot merge, {kvs} contains different values for the same key"
+  assert len(
+      kvs :=
+      {(k, v)
+       for d in ds for k, v in d.items()}) == len({
+           kv[0]
+           for kv in kvs
+       }), f"cannot merge, {kvs} contains different values for the same key"
   return {k:v for d in ds for k,v in d.items()}
 def partition(lst, fxn):
   a: list[Any] = []
@@ -143,7 +149,11 @@ class dtypes:
   def imagef(shp): return ImageDType(100, 4, "imagef", np.float32, shp)
 
 # HACK: staticmethods are not callable in 3.8 so we have to compare the class
-DTYPES_DICT = {k: v for k, v in dtypes.__dict__.items() if not k.startswith('__') and not callable(v) and not v.__class__ == staticmethod}
+DTYPES_DICT = {
+    k: v
+    for k, v in dtypes.__dict__.items() if not k.startswith('__')
+    and not callable(v) and v.__class__ != staticmethod
+}
 INVERSE_DTYPES_DICT = {v:k for k,v in DTYPES_DICT.items()}
 
 class GlobalCounters:
@@ -189,9 +199,7 @@ def diskcache_get(table:str, key:Union[Dict, str, int]) -> Any:
     res = cur.execute(f"SELECT val FROM {table} WHERE {' AND '.join([f'{x}=?' for x in key.keys()])}", tuple(key.values()))
   except sqlite3.OperationalError:
     return None  # table doesn't exist
-  if (val:=res.fetchone()) is not None:
-    return pickle.loads(val[0])
-  return None
+  return pickle.loads(val[0]) if (val:=res.fetchone()) is not None else None
 
 _db_tables = set()
 def diskcache_put(table:str, key:Union[Dict, str, int], val:Any):

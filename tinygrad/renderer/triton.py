@@ -19,11 +19,11 @@ def render_valid(valid):
 
 #NOTE Triton requires matching dimensions for load/store, disable this and see TestOps::test_output_padded_conv_transpose2d fail to compile
 def fill_dims_for_idx(idx, dims):
-  return "(" + idx + "+ (" + (f"0*({'+'.join(d for d in dims)})))") if len(dims) else idx
+  return f"({idx}+ (" + f"0*({'+'.join(dims)})))" if len(dims) else idx
 
 def get_max(var):
-  if isinstance(var, int): return var
-  return re.sub(r'\[(.*?)\]', '', str(var))[1:-1]
+  return (var if isinstance(var, int) else re.sub(r'\[(.*?)\]', '',
+                                                  str(var))[1:-1])
 
 #NOTE can be removed after https://github.com/gpuocelot/gpuocelot/issues/8 gets resolved
 def remove_single_scalar_curly_braces(ptx_code):
@@ -58,6 +58,7 @@ def uops_to_triton(function_name:str, uops:List[UOp]):
       child_count[v] += 1
 
   def kk(s): kernel.append("  "*depth+s)
+
   code_for_op: Final[Dict[Op, Callable]] = {
     UnaryOps.EXP2: lambda x,: f"tl.math.exp2({x})",
     UnaryOps.LOG2: lambda x,: f"tl.math.log2({x})",
@@ -73,6 +74,7 @@ def uops_to_triton(function_name:str, uops:List[UOp]):
     TernaryOps.WHERE: lambda x,y,z,: f"tl.where({x},{y},{z})",
   }
   def int_div(x,y): return f"({x}//{y})" if y != '0' else f"{x}*tl.where({x}==0, float('nan'), float('inf'))"
+
   for u in uops:
     uop,dtype,vin,args = u.uop,u.dtype,u.vin,u.arg
     if uop == UOps.LOOP:
@@ -105,7 +107,7 @@ def uops_to_triton(function_name:str, uops:List[UOp]):
       valid.append(f"{args[1]}<{get_max(args[2])}")
       if args[1].startswith("g"): kk(f"{args[1]} = tl.program_id({args[0]}) # {args[2]}")
       elif args[1].startswith("l"):
-        kk(f"{args[1]} = tl.arange({0}, {next_power_of_2(args[2])})")
+        kk(f"{args[1]} = tl.arange(0, {next_power_of_2(args[2])})")
         local_size.append(args[2])
       r[u] = args[1]
     elif uop == UOps.CAST and dtype is not None: r[u] = render_cast(r[vin[0]], dtype)

@@ -15,7 +15,8 @@ def compile_and_test_ast(ast, local_size=None):
   k = CLCodegen(ast)
   prg = k.codegen().build(CLProgram)
   if local_size is not None: prg.local_size = local_size
-  for i in range(5): prg(prg.lower(k.bufs))
+  for _ in range(5):
+    prg(prg.lower(k.bufs))
   if getenv("TEST", 0): test_ast(k)
 
 class TestAST(unittest.TestCase):

@@ -297,7 +297,7 @@ class TestHandCodedOpts(unittest.TestCase):
     out = Tensor.conv2d(x,w, padding=1)
     upcasts = []
     # collect upcasts of tile transform kernels
-    for i, si in enumerate(out.lazydata.schedule()):
+    for si in out.lazydata.schedule():
       k = Linearizer(si.ast)
       k.hand_coded_optimizations()
       if k.reduceop is not None: continue  # not a tile transform kernel (there is a gemm reduce kernel)

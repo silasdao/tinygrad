@@ -22,12 +22,17 @@ def match_types(x, y):
 
 def einsum_mulacc(einsum, get_strides, expand):
   def einscripts(x): return ''.join(["abcdefghijklmnopqrstuvwxyz"[i] for i in x])
-  def axes_slice(strides): return [i for i,s in enumerate(strides) if s != 0], tuple([slice(None) if s != 0 else 0 for i,s in enumerate(strides)])
+
+  def axes_slice(strides):
+    return [i for i, s in enumerate(strides) if s != 0], tuple(
+        slice(None) if s != 0 else 0 for i, s in enumerate(strides))
+
   def mulacc(a, b, new_shape):
     (a_axes, a_slices), (b_axes, b_slices) = axes_slice(get_strides(a)), axes_slice(get_strides(b))
     out = [i for i in range(len(new_shape)) if a.shape[i] == new_shape[i] and (i in a_axes or i in b_axes)]
     ret = einsum(f"{einscripts(a_axes)}, {einscripts(b_axes)} -> {einscripts(out)}", a[a_slices], b[b_slices])
     return expand(ret.reshape([(1 if i not in a_axes and i not in b_axes else s) for i,s in enumerate(new_shape)]), new_shape)
+
   return mulacc
 
 numpy_fxn_for_op: Dict[Op, Callable] = {**base_fxn_for_op, **{

@@ -205,7 +205,7 @@ MODEL_URLS = {
 def init_whisper(model_name="tiny.en"):
   assert MODEL_URLS[model_name] is not None
 
-  filename = BASE / "whisper-{}.pt".format(model_name)
+  filename = BASE / f"whisper-{model_name}.pt"
   download_file(MODEL_URLS[model_name], filename)
   state = torch_load(filename)
   model = Whisper(state['dims'])
@@ -220,7 +220,7 @@ def transcribe_file(model, enc, filename):
   lst = [enc._special_tokens["<|startoftranscript|>"], enc._special_tokens["<|notimestamps|>"]]
   dat = model.encoder(Tensor(log_spec)).realize()
 
-  for i in range(50):
+  for _ in range(50):
     out = model.decoder(Tensor([lst]), dat).realize()
     idx = int(out[0,-1].argmax().numpy().item())
     lst.append(idx)
@@ -246,11 +246,10 @@ if __name__ == "__main__":
     lst = [enc._special_tokens["<|startoftranscript|>"], enc._special_tokens["<|notimestamps|>"]]
     total = None
     did_read = False
-    for i in range(0, int(RATE / CHUNK * RECORD_SECONDS)):
+    for _ in range(0, int(RATE / CHUNK * RECORD_SECONDS)):
       while not q.empty() or total is None:
         waveform = q.get()
-        if total is None: total = waveform
-        else: total = np.concatenate([total, waveform])
+        total = waveform if total is None else np.concatenate([total, waveform])
         did_read = True
       if did_read:
         log_spec = prep_audio(total)

@@ -18,7 +18,7 @@ def convert_f32_to_f16(input_file, output_file):
     float32_values = np.fromfile(f, dtype=np.float32)
 
   first_text_model_offset = 3772703308
-  num_elements = int((first_text_model_offset)/4)
+  num_elements = first_text_model_offset // 4
   front_float16_values = float32_values[:num_elements].astype(np.float16)
   rest_float32_values = float32_values[num_elements:]
 
@@ -40,7 +40,7 @@ def split_safetensor(fn):
     if (metadata[k]["data_offsets"][0] < text_model_offset):
       metadata[k]["data_offsets"][0] = int(metadata[k]["data_offsets"][0]/2)
       metadata[k]["data_offsets"][1] = int(metadata[k]["data_offsets"][1]/2)
-  
+
   last_offset = 0
   part_end_offsets = []
 
@@ -51,24 +51,24 @@ def split_safetensor(fn):
       break
 
     part_offset = offset - last_offset
-    
+
     if (part_offset >= chunk_size):
       part_end_offsets.append(8+json_len+offset)
       last_offset = offset
 
-  text_model_start = int(text_model_offset/2)
+  text_model_start = text_model_offset // 2
   net_bytes = bytes(open(fn, 'rb').read())
   part_end_offsets.append(text_model_start+8+json_len)
   cur_pos = 0
-  
+
   for i, end_pos in enumerate(part_end_offsets):
     with open(f'./net_part{i}.safetensors', "wb+") as f:
       f.write(net_bytes[cur_pos:end_pos])
       cur_pos = end_pos
 
-  with open(f'./net_textmodel.safetensors', "wb+") as f:
+  with open('./net_textmodel.safetensors', "wb+") as f:
     f.write(net_bytes[text_model_start+8+json_len:])
-  
+
   return part_end_offsets
 
 if __name__ == "__main__":

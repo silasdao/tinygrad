@@ -35,16 +35,10 @@ if __name__ == "__main__":
   for i,si in enumerate(sched):
     # create output/input buffers (NOTE: bufs_from_lin is slower, so we don't use it. TODO: fix)
     rawbufs = [device.buffer(si.out.st.size(), si.out.dtype)] + [device.buffer(x.st.size(), x.dtype) for x in si.inputs]
-    #rawbufs = bufs_from_lin(lin)
-
-    # "linearize" the op into uops in different ways
-    lins:List[Linearizer] = []
-
     # always try hand coded opt
     lin = Linearizer(si.ast, device.linearizer_opts)
     lin.hand_coded_optimizations()
-    lins.append(lin)
-
+    lins: List[Linearizer] = [lin]
     # maybe try tensor cores
     lin = Linearizer(si.ast, device.linearizer_opts)
     if lin.apply_tensor_cores():

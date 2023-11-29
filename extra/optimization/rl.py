@@ -17,6 +17,7 @@ if __name__ == "__main__":
 
   # select a world
   all_feats, all_acts, all_rews = [], [], []
+  BS = 32
   while 1:
     Tensor.no_grad, Tensor.training = True, False
     lin = ast_str_to_lin(random.choice(ast_strs))
@@ -52,7 +53,7 @@ if __name__ == "__main__":
         break
       #print(f"{tm*1e6:10.2f}", lin.colored_shape())
 
-    assert len(feats) == len(acts) and len(acts) == len(rews)
+    assert len(feats) == len(acts) == len(rews)
     #print(rews)
     print(f"***** EPISODE {len(rews)} steps, {sum(rews):5.2f} reward, {base_tm*1e6:12.2f} -> {tm*1e6:12.2f} : {lin.colored_shape()}")
     all_feats += feats
@@ -61,7 +62,6 @@ if __name__ == "__main__":
     for i in range(len(rews)-2, -1, -1): rews[i] += rews[i+1]
     all_rews += rews
 
-    BS = 32
     if len(all_feats) >= BS:
       Tensor.no_grad, Tensor.training = False, True
       x = Tensor(all_feats[:BS])

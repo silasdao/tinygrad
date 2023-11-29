@@ -73,7 +73,7 @@ if __name__ == "__main__":
   old_tms = []
   new_tms = []
 
-  for i in range(5):
+  for _ in range(5):
     old_tms.append(old([1,1,256], [4,16,1], out, x, w, b, wait=True))
     new_tms.append(new([256,1,1], [4,16,1], out, x, w, b, wait=True))
 

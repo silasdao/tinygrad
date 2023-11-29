@@ -11,7 +11,7 @@ inverse_safe_dtypes = {v:k for k,v in safe_dtypes.items()}
 
 def safe_load_metadata(fn:Union[Tensor,str]) -> Tuple[Tensor, int, Any]:
   t = fn if isinstance(fn, Tensor) else Tensor.empty(os.stat(fn).st_size, dtype=dtypes.uint8, device=f"disk:{fn}")
-  json_len = t[0:1].cast(dtypes.int64).numpy()[0]
+  json_len = t[:1].cast(dtypes.int64).numpy()[0]
   return (t, json_len, json.loads(t[8:8+json_len].numpy().tobytes()))
 
 def safe_load(fn:Union[Tensor,str]) -> Dict[str, Tensor]:
@@ -28,7 +28,7 @@ def safe_save(tensors:Dict[str, Tensor], fn:str, metadata:Optional[Dict[str, Any
   j += "\x20"*((8-len(j)%8)%8)
   pathlib.Path(fn).unlink(missing_ok=True)
   t = Tensor.empty(8+len(j)+offset, dtype=dtypes.uint8, device=f"disk:{fn}")
-  t[0:1].cast(dtypes.int64).assign([len(j)])
+  t[:1].cast(dtypes.int64).assign([len(j)])
   t[8:8+len(j)].assign(Tensor(list(j.encode('utf-8')), dtype=dtypes.uint8, device="cpu"))
   for k,v in safe_load(t).items(): v.assign(tensors[k])
 
@@ -84,8 +84,11 @@ def torch_load(fn:str):
     shape_strides = [(s, st) for s,st in zip(size, stride) if s != 1]
     permute_indexes = [len(shape_strides)-1-y for y in argsort([x[1] for x in shape_strides])]
     if tuple(permute_indexes) != tuple(range(len(permute_indexes))):
-      intermediate_shape = tuple([shape_strides[x][0] for x in argsort(permute_indexes)])
-      assert tuple([shape_strides[i][1] for i in argsort(permute_indexes)]) == strides_for_shape(intermediate_shape), "nonpermutable strides"
+      intermediate_shape = tuple(shape_strides[x][0]
+                                 for x in argsort(permute_indexes))
+      assert tuple(shape_strides[i][1]
+                   for i in argsort(permute_indexes)) == strides_for_shape(
+                       intermediate_shape), "nonpermutable strides"
       if DEBUG >= 2: print(f"WARNING: this torch load is slow. CPU to permute {intermediate_shape} with {permute_indexes}")
       # TODO: find a nice way to support all shapetracker on disktensors
       ret = ret.cpu().reshape(intermediate_shape).permute(permute_indexes)
@@ -104,7 +107,7 @@ def torch_load(fn:str):
       return intercept[name] if module_root == "torch" else super().find_class(module, name)
     def persistent_load(self, pid): return pid
 
-  if tuple(t[0:2].numpy()) == (0x50, 0x4b):
+  if tuple(t[:2].numpy()) == (0x50, 0x4B):
     myzip = zipfile.ZipFile(fn, 'r')
     base_name = myzip.namelist()[0].split('/', 1)[0]
     for n in myzip.namelist():

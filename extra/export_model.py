@@ -32,7 +32,9 @@ def jit_model(model, *args) -> Tuple[TinyJit,Dict[int,str]]:
   @TinyJit
   def run(*x):
     out = model.forward(*x) if hasattr(model, "forward") else model(*x)
-    assert isinstance(out, tuple) or isinstance(out, list) or isinstance(out, Tensor), "model output must be a Tensor, tuple, or a list of Tensors for export"
+    assert isinstance(
+        out, (tuple, list, Tensor)
+    ), "model output must be a Tensor, tuple, or a list of Tensors for export"
     out = [out] if isinstance(out, Tensor) else out
     return [o.realize() for o in out]
 
@@ -76,7 +78,7 @@ def export_model_webgpu(functions, statements, bufs, bufs_to_save, weight_names,
   gpu_read_bufs = '\n    '.join([f"const gpuReadBuffer{i} = device.createBuffer({{size:{output_name}.size, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ }});" for i,output_name in enumerate(output_names)])
   outbuf_copies = '\n        '.join([f"commandEncoder.copyBufferToBuffer({output_name}, 0, gpuReadBuffer{i}, 0, output{i}.size);" for i,output_name in enumerate(output_names)])
   output_readers = '\n        '.join([f"await gpuReadBuffer{i}.mapAsync(GPUMapMode.READ);\n        const resultBuffer{i} = new Float32Array(gpuReadBuffer{i}.size);\n        resultBuffer{i}.set(new Float32Array(gpuReadBuffer{i}.getMappedRange()));\n        gpuReadBuffer{i}.unmap();" for i in range(len(output_names))])
-  output_return = '[{}]'.format(",".join([f'resultBuffer{i}' for i in range(len(output_names))]))
+  output_return = f"""[{",".join([f'resultBuffer{i}' for i in range(len(output_names))])}]"""
   return f"""
 const getTensorMetadata = (safetensorBuffer) => {{
   const metadataLength = Number(new DataView(safetensorBuffer.buffer).getBigUint64(0, true));
@@ -151,29 +153,33 @@ def export_model(model, target:str, *inputs):
     prg = export_model_webgpu(functions, statements, bufs, bufs_to_save, weight_names, input_names, output_names)
   else:
     prg = json.dumps({
-      "backend": Device.DEFAULT,
-      "inputs": [{
-        "size": bufs[name][0],
-        "dtype": bufs[name][1].name
-      } for name in input_names],
-      "outputs": [{
-        "size": bufs[name][0],
-        "dtype": bufs[name][1].name
-      } for name in output_names],
-      "functions": functions,
-      "statements": [{
-        "kernel": kernel,
-        "args": args,
-        "global_size": global_size,
-        "local_size": local_size
-      } for (kernel, args, global_size, local_size) in statements],
-      "buffers": {
-        name: {
-          "size": size,
-          "dtype": dtype.name,
-          "id": weight_names[_key] if _key in weight_names else ""
-        } for name, (size,dtype,_key) in bufs.items() if name not in ["input", "outputs"]
-      }
+        "backend":
+        Device.DEFAULT,
+        "inputs": [{
+            "size": bufs[name][0],
+            "dtype": bufs[name][1].name
+        } for name in input_names],
+        "outputs": [{
+            "size": bufs[name][0],
+            "dtype": bufs[name][1].name
+        } for name in output_names],
+        "functions":
+        functions,
+        "statements": [{
+            "kernel": kernel,
+            "args": args,
+            "global_size": global_size,
+            "local_size": local_size,
+        } for (kernel, args, global_size, local_size) in statements],
+        "buffers": {
+            name: {
+                "size": size,
+                "dtype": dtype.name,
+                "id": weight_names.get(_key, ""),
+            }
+            for name, (size, dtype, _key) in bufs.items()
+            if name not in ["input", "outputs"]
+        },
     })
 
   return prg, {input:bufs[input][0] for input in input_names}, {output:bufs[output][0] for output in output_names}, state

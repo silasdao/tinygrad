@@ -32,7 +32,7 @@ def torch_prog(b, c):
   a = b@c
   torch.mps.synchronize()
   return time.perf_counter() - st
-tm = min([torch_prog(b, c) for _ in range(200)])
+tm = min(torch_prog(b, c) for _ in range(200))
 print(f"{N:d}x{M:d} {tm*1e6:9.2f} us, would be {FLOPS*1e-9/tm:9.2f} GFLOPS matvec in torch")
 torch_a = (b@c).cpu()
 
@@ -101,7 +101,7 @@ def timeit(fxn):
   et = fxn()
   # NOTE: et doesn't contain the launch overhead
   return time.perf_counter() - st
-tm = min([timeit(metalrun) for _ in range(200)])
+tm = min(timeit(metalrun) for _ in range(200))
 print(f"{N:d}x{M:d} {tm*1e6:9.2f} us, would be {FLOPS*1e-9/tm:9.2f} GFLOPS matvec in metal")
 metal_a = metalrun().toCPU().reshape(M)
 np.testing.assert_allclose(metal_a, torch_a, atol=5e-3)
@@ -120,7 +120,7 @@ def tiny_prog(b, c):
   a = tiny_jit(b, c)
   METAL.synchronize()
   return time.perf_counter() - st
-tm = min([tiny_prog(b, c) for _ in range(200)])
+tm = min(tiny_prog(b, c) for _ in range(200))
 print(f"{N:d}x{M:d} {tm*1e6:9.2f} us, would be {FLOPS*1e-9/tm:9.2f} GFLOPS matvec in tinygrad")
 tiny_a = tiny_jit(b, c).numpy()
 np.testing.assert_allclose(tiny_a, torch_a, atol=5e-3)

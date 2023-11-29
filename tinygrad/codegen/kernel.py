@@ -130,9 +130,9 @@ class Kernel:
   def membufs(self) -> List[MemBuffer]: return [x for x in self.bufs if isinstance(x, MemBuffer)]
 
   def has_variable_shape(self) -> bool:
-    for b in self.bufs:
-      if not isinstance(b, LocalBuffer) and not all_int(b.st.views[-1].shape): return True
-    return False
+    return any(
+        not isinstance(b, LocalBuffer) and not all_int(b.st.views[-1].shape)
+        for b in self.bufs)
 
   def shape_offsets(self, i): return itertools.product(*[list(range(s)) for s in self.sts[i].shape[self.shape_len-self.upcasted:][::-1]]) if self.upcasted > 0 else [tuple()]
   def float4_axis(self, i): return [x-(self.shape_len-self.upcasted) for x in self.sts[i].unit_stride_axes() if x >= self.shape_len-self.upcasted and self.sts[i].shape[x]%4 == 0]
@@ -228,8 +228,12 @@ class Kernel:
     move_axis = axis if top else axis+1
     if move_axis < insert_before: insert_before += 1
     self.reshape_and_permute(
-      lambda x: list(x[0:axis]) + (([amount, x[axis]//amount] if top else [x[axis]//amount, amount]) if x[axis] > 1 else [1,1]) + list(x[axis+1:]),
-      [i for i in range(insert_before) if i != move_axis] + [move_axis] + [i for i in range(insert_before, self.shape_len+1) if i != move_axis])
+        lambda x: list(x[:axis]) + (
+            ([amount, x[axis] // amount] if top else [x[axis] // amount, amount])
+            if x[axis] > 1 else [1, 1]) + list(x[axis + 1:]),
+        [i for i in range(insert_before) if i != move_axis] + [move_axis] +
+        [i for i in range(insert_before, self.shape_len + 1) if i != move_axis],
+    )
 
   # ******************** complex simplifiers ********************
 
@@ -265,10 +269,13 @@ class Kernel:
     # TODO: move this into shapetracker, with tests!
     rets = [[(shapes[j][0], strides[j][0])] for j in range(len(shapes))]
     for i in range(1, len(shapes[0])):
-      can_merge = []
-      for j in range(len(shapes)):
-        # TODO: added the always mergeability of 1s, is this right? if so, add to shapetracker in the 1 case
-        can_merge.append(strides[j][i] is not None and ((strides[j][i] != 0 and rets[j][-1][1] == shapes[j][i]*cast(int, strides[j][i])) or (strides[j][i] == 0 and rets[j][-1][1] == 0)))
+      can_merge = [
+          (strides[j][i] is not None and
+           ((strides[j][i] != 0
+             and rets[j][-1][1] == shapes[j][i] * cast(int, strides[j][i])) or
+            (strides[j][i] == 0 and rets[j][-1][1] == 0)))
+          for j in range(len(shapes))
+      ]
       # more can merge than this
       mergeable = all(can_merge) and i != self.first_reduce
       for j in range(len(shapes)):
@@ -276,7 +283,8 @@ class Kernel:
         else: rets[j].append((shapes[j][i], strides[j][i]))
 
     # do the reshapes
-    for i,x in enumerate(rets[:len(self.sts)]): self.sts[i] = self.sts[i].reshape(tuple([y[0] for y in x]))
+    for i,x in enumerate(rets[:len(self.sts)]):
+      self.sts[i] = self.sts[i].reshape(tuple(y[0] for y in x))
 
   # ******************** GPU simplifiers ********************
   def _limit_size(self, x: Tuple[int], max_size: List) -> Tuple[int, ...]:
@@ -285,11 +293,9 @@ class Kernel:
       next_idx = (i + 1) % dims
       while new_shape[i] > max_size[i]:
         new_shape[i] = new_shape[i] // 2
-        if (new_shape[next_idx] <= max_size[next_idx]):
-          new_shape[next_idx] = new_shape[next_idx] * 2
-        else:
+        if new_shape[next_idx] > max_size[next_idx]:
           next_idx = (next_idx + 1) % dims
-          new_shape[next_idx] = new_shape[next_idx] * 2
+        new_shape[next_idx] = new_shape[next_idx] * 2
     return tuple(new_shape)
 
   def limit_dims_to_max(self, global_max: List[int], local_max: List[int]):
@@ -398,7 +404,9 @@ class Kernel:
     assert not self.dont_use_locals or opt.op not in {OptOps.LOCAL, OptOps.LASTLOCAL, OptOps.GROUP, OptOps.GROUPTOP, OptOps.UPCASTMID}, "not using locals"
     self.applied_opts.append(opt)
     if opt.axis is not None:
-      axis = opt.axis + (self.first_reduce if opt.op == OptOps.UNROLL else (self.first_reduce+len(self.group_for_reduce) if opt.op == OptOps.GROUP or opt.op == OptOps.GROUPTOP else 0))
+      axis = opt.axis + (self.first_reduce if opt.op == OptOps.UNROLL else
+                         self.first_reduce + len(self.group_for_reduce)
+                         if opt.op in [OptOps.GROUP, OptOps.GROUPTOP] else 0)
     else:
       axis = -1
     if opt.amt is not None:
@@ -454,7 +462,8 @@ class Kernel:
     for buf_index,buf in enumerate(self.bufs):
       unit_stride_axes_mul_4 = [i for i in self.sts[buf_index].unit_stride_axes(ignore_valid=True) if self.sts[buf_index].shape[i]%4 == 0]
       if (not early_only or buf in self.earlybufs) and self.bufs[buf_index].dtype.__class__ is ImageDType:
-        assert len(unit_stride_axes_mul_4) >= 1, f"needs a unit stride axis in {self.bufs[buf_index]}"
+        assert (unit_stride_axes_mul_4
+                ), f"needs a unit stride axis in {self.bufs[buf_index]}"
         if all(x < (self.shape_len-self.upcasted) for x in unit_stride_axes_mul_4) and unit_stride_axes_mul_4[0] not in self.upcast_in_mid_reduce_axes:
           if unit_stride_axes_mul_4[0] < self.first_reduce:
             self.apply_opt(Opt(OptOps.UPCAST, unit_stride_axes_mul_4[0], 4))
@@ -468,9 +477,9 @@ class Kernel:
     # should use matvec - TODO: adjust/tune based on the wide vs tall/large vs small mat
     MV_BLOCKSIZE, MV_THREADS_PER_ROW, MV_ROWS_PER_THREAD = getenv("MV_BLOCKSIZE", 4), getenv("MV_THREADS_PER_ROW", 8), getenv("MV_ROWS_PER_THREAD", 4)
     if self.opts.has_local and getenv("MV",1) != 0 and (MV_BLOCKSIZE > 1 or MV_THREADS_PER_ROW > 1 or MV_ROWS_PER_THREAD > 1) and  \
-        self.reduceop and self.reduceop.op == ReduceOps.SUM and len(self.full_shape) >= 2 and self.opts.has_shared and \
-        isinstance(self.reduceop.src[0], LazyOp) and self.reduceop.src[0].op == BinaryOps.MUL and \
-        self.reduceop.src[0].src[0].op == BufferOps.MEM and self.reduceop.src[0].src[1].op == BufferOps.MEM:
+          self.reduceop and self.reduceop.op == ReduceOps.SUM and len(self.full_shape) >= 2 and self.opts.has_shared and \
+          isinstance(self.reduceop.src[0], LazyOp) and self.reduceop.src[0].op == BinaryOps.MUL and \
+          self.reduceop.src[0].src[0].op == BufferOps.MEM and self.reduceop.src[0].src[1].op == BufferOps.MEM:
       buf0 = self.bufs.index(self.reduceop.src[0].src[0].arg)
       buf1 = self.bufs.index(self.reduceop.src[0].src[1].arg)
       buf0_strides = self.sts[buf0].real_strides()
@@ -523,7 +532,7 @@ class Kernel:
       # we might want to be able to split axes that are masked, or refuse to merge them in simplify_merge_adjacent
       # for now skip upcasting here if there is a symbolic axis
       if isinstance(self.full_shape[axis], int) and self.full_shape[axis] <= 7 and any(st.axis_is_masked(axis) for st in self.sts) and \
-        prod(self.full_shape[self.shape_len - self.upcasted:]) * prod(self.full_shape[j] for j in to_upcast) * self.full_shape[axis] <= 7 * 7:
+          prod(self.full_shape[self.shape_len - self.upcasted:]) * prod(self.full_shape[j] for j in to_upcast) * self.full_shape[axis] <= 7 * 7:
         if DEBUG >= 4: print(f"upcasting masked axis : {axis}")
         to_upcast.append(axis)
     for axis in to_upcast[::-1]:
@@ -535,7 +544,11 @@ class Kernel:
       xb_choices = []
       for axis, upcast_amount in itertools.product(range(self.first_reduce), [3,4]):   # consider all the non reduce axes, and a 3 or 4 reduce
         # if we haven't upcasted it, it's not symbolic, it mods, and some buffer has stride 0 on axis while having no stride 0 in the upcasted axis already
-        if axis not in upcasted_axis and isinstance(self.full_shape[axis], int) and self.full_shape[axis]%upcast_amount == 0 and any(st.views[-1].strides[axis] == 0 and not any(x[1] == 0 for x in self.upcasted_axis(buf_index)) for buf_index, st in enumerate(self.sts)):
+        if (axis not in upcasted_axis and isinstance(self.full_shape[axis], int)
+            and self.full_shape[axis] % upcast_amount == 0
+            and any(st.views[-1].strides[axis] == 0 and all(
+                x[1] != 0 for x in self.upcasted_axis(buf_index))
+                    for buf_index, st in enumerate(self.sts))):
           xb_choices.append((sum(st.views[-1].strides[axis]>0 for st in self.sts), sum(st.views[-1].strides[axis] for st in self.sts), axis, upcast_amount))
       if xb_choices:
         xb_choices = sorted(xb_choices)

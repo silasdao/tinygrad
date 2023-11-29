@@ -104,7 +104,14 @@ class ShapeTracker:
       # then, we make it the correct shape
       # then, we apply permutations
       # TODO: don't use as_strided
-      to_apply.append((MovementOps.AS_STRIDED, (tuple([s if st != 0 else 1 for s,st in zip(real_shape, v.strides)]), v.strides, real_offset)))
+      to_apply.append((
+          MovementOps.AS_STRIDED,
+          (
+              tuple(s if st != 0 else 1 for s, st in zip(real_shape, v.strides)),
+              v.strides,
+              real_offset,
+          ),
+      ))
       # then, we apply pre expand pads
       if v.mask is not None:
         pre_expand_pads = tuple((x,s-y) if st != 0 else (0,0) for (x,y),s,st in zip(v.mask, v.shape, v.strides))
@@ -137,7 +144,7 @@ class ShapeTracker:
   def unit_stride_axes(self, ignore_valid=False) -> List[int]: return [i for i,st in enumerate(self.real_strides(ignore_valid)) if st == 1]
 
   def _expr_idx(self, idx, valid) -> Tuple[Node, Node]:
-    for v in reversed(self.views[0:-1]):
+    for v in reversed(self.views[:-1]):
       if valid.max == 0: return Variable.num(-1), valid
       valid = expr_node_mask(v, idx, valid)
       idx = expr_node(v, idx)
@@ -145,8 +152,7 @@ class ShapeTracker:
 
   def simplify(self) -> ShapeTracker:
     if len(self.views) >= 2:
-      new_view = merge_views(self.views[-2], self.views[-1])
-      if new_view:
+      if new_view := merge_views(self.views[-2], self.views[-1]):
         if DEBUG >= 4: print(f"st simplify : {self.views[-2]} + {self.views[-1]} = {new_view}")
         return ShapeTracker(self.views[:-2] + (new_view,)).simplify()
     return self
@@ -168,19 +174,19 @@ class ShapeTracker:
   # *** under this line are the movement ops ***
 
   def pad(self, arg: Tuple[Tuple[int, int], ...]) -> ShapeTracker:
-    return ShapeTracker(self.views[0:-1] + (self.views[-1].pad(arg), ))
+    return ShapeTracker(self.views[:-1] + (self.views[-1].pad(arg), ))
 
   def shrink(self, arg: Tuple[Tuple[sint, sint], ...]) -> ShapeTracker:
-    return ShapeTracker(self.views[0:-1] + (self.views[-1].shrink(arg), ))
+    return ShapeTracker(self.views[:-1] + (self.views[-1].shrink(arg), ))
 
   def expand(self, new_shape: Tuple[sint, ...]) -> ShapeTracker:
-    return ShapeTracker(self.views[0:-1] + (self.views[-1].expand(new_shape), ))
+    return ShapeTracker(self.views[:-1] + (self.views[-1].expand(new_shape), ))
 
   def permute(self, axis: Tuple[int, ...]) -> ShapeTracker:
-    return ShapeTracker(self.views[0:-1] + (self.views[-1].permute(axis), ))
+    return ShapeTracker(self.views[:-1] + (self.views[-1].permute(axis), ))
 
   def stride(self, mul: Tuple[int, ...]) -> ShapeTracker:
-    return ShapeTracker(self.views[0:-1] + (self.views[-1].stride(mul), ))
+    return ShapeTracker(self.views[:-1] + (self.views[-1].stride(mul), ))
 
   def reshape(self, new_shape: Tuple[sint, ...]) -> ShapeTracker:
     new_view = self.views[-1].reshape(new_shape)
@@ -188,9 +194,9 @@ class ShapeTracker:
       extra_view = View.create(new_shape)
       # last chance to merge. TODO: move into View
       if (merged_view := merge_views(self.views[-1], extra_view)) is not None:
-        return ShapeTracker(self.views[0:-1] + (merged_view,))
+        return ShapeTracker(self.views[:-1] + (merged_view,))
       return ShapeTracker(self.views + (extra_view, ))
-    return ShapeTracker(self.views[0:-1] + (new_view,))
+    return ShapeTracker(self.views[:-1] + (new_view,))
 
 # returns the axes to create new_shape if new_shape can be created by combining axis from old_shape
 # TODO: if we remove movementops from lazy.py we can delete this

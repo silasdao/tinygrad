@@ -158,8 +158,7 @@ class ResBlock:
     emb_out = emb.sequential(self.emb_layers)
     h = h + emb_out.reshape(*emb_out.shape, 1, 1)
     h = h.sequential(self.out_layers)
-    ret = self.skip_connection(x) + h
-    return ret
+    return self.skip_connection(x) + h
 
 class CrossAttention:
   def __init__(self, query_dim, context_dim, n_heads, d_head):
@@ -230,8 +229,7 @@ class SpatialTransformer:
     for block in self.transformer_blocks:
       x = block(x, context=context)
     x = x.permute(0,2,1).reshape(b, c, h, w)
-    ret = self.proj_out(x) + x_in
-    return ret
+    return self.proj_out(x) + x_in
 
 class Downsample:
   def __init__(self, channels):
@@ -377,7 +375,7 @@ class CLIPEncoderLayer:
 
 class CLIPEncoder:
   def __init__(self):
-    self.layers = [CLIPEncoderLayer() for i in range(12)]
+    self.layers = [CLIPEncoderLayer() for _ in range(12)]
 
   def __call__(self, hidden_states, causal_attention_mask):
     for l in self.layers:
@@ -454,9 +452,8 @@ class ClipTokenizer:
     merges = merges[1:49152-256-2+1]
     merges = [tuple(merge.split()) for merge in merges]
     vocab = list(bytes_to_unicode().values())
-    vocab = vocab + [v+'</w>' for v in vocab]
-    for merge in merges:
-      vocab.append(''.join(merge))
+    vocab += [f'{v}</w>' for v in vocab]
+    vocab.extend(''.join(merge) for merge in merges)
     vocab.extend(['<|startoftext|>', '<|endoftext|>'])
     self.encoder = dict(zip(vocab, range(len(vocab))))
     self.bpe_ranks = dict(zip(merges, range(len(merges))))
@@ -466,11 +463,11 @@ class ClipTokenizer:
   def bpe(self, token):
     if token in self.cache:
       return self.cache[token]
-    word = tuple(token[:-1]) + ( token[-1] + '</w>',)
+    word = tuple(token[:-1]) + (f'{token[-1]}</w>', )
     pairs = get_pairs(word)
 
     if not pairs:
-      return token+'</w>'
+      return f'{token}</w>'
 
     while True:
       bigram = min(pairs, key = lambda pair: self.bpe_ranks.get(pair, float('inf')))
@@ -538,10 +535,10 @@ class StableDiffusion:
   def get_model_output(self, unconditional_context, context, latent, timestep, unconditional_guidance_scale):
     # put into diffuser
     latents = self.model.diffusion_model(latent.expand(2, *latent.shape[1:]), timestep, unconditional_context.cat(context, dim=0))
-    unconditional_latent, latent = latents[0:1], latents[1:2]
+    unconditional_latent, latent = latents[:1], latents[1:2]
 
-    e_t = unconditional_latent + unconditional_guidance_scale * (latent - unconditional_latent)
-    return e_t
+    return unconditional_latent + unconditional_guidance_scale * (
+        latent - unconditional_latent)
 
   def decode(self, x):
     x = self.first_stage_model.post_quant_conv(1/0.18215 * x)

@@ -41,7 +41,8 @@ def nm(x):
 def get_sop(op: List[Op]):
   op = [x for x in op if x not in BufferOps]
   if len(op) <= 2: return '.'.join([str(y).split(".")[1] for y in op][::-1])
-  if len(op) <= 6: return '.'.join([str(y).split(".")[1][0:3] for y in op][::-1])
+  if len(op) <= 6:
+    return '.'.join([str(y).split(".")[1][:3] for y in op][::-1])
   return str(len(op))
 
 def str_dtype(dtyp):
@@ -92,7 +93,12 @@ def log_schedule_item(si: ScheduleItem):
 
     if nm(si.out) not in G.nodes: G.add_node(nm(si.out))
 
-    G.nodes[nm(si.out)]['label'] = (str(set(x.shape for x in si.inputs))+"\n"+str(si.out.shape) if optype == ReduceOps else str(si.out.shape))+str_dtype(si.out.dtype)+(f"\n{si.ast.op}" if si.ast.op in LoadOps else "")
+    G.nodes[nm(si.out)]['label'] = (
+        (str({x.shape
+              for x in si.inputs}) + "\n" +
+         str(si.out.shape) if optype == ReduceOps else str(si.out.shape)) +
+        str_dtype(si.out.dtype) +
+        (f"\n{si.ast.op}" if si.ast.op in LoadOps else ""))
     G.nodes[nm(si.out)]['fillcolor'] = top_colors[optype]
     G.nodes[nm(si.out)]['color'] = 'black'
     G.nodes[nm(si.out)]['style'] = 'filled'
@@ -103,7 +109,7 @@ def _tree(lazydata, prefix=""):
   lines = [f"━┳ {prefix}{lazydata.op.name} {lazydata.arg if lazydata.arg else ''}"]
   childs = [_tree(c) for c in lazydata.src[:]]
   for c in childs[:-1]: lines += [f" ┣{c[0]}"] + [f" ┃{l}" for l in c[1:]]
-  return lines + [" ┗"+childs[-1][0]] + ["  "+l for l in childs[-1][1:]]
+  return lines + [f" ┗{childs[-1][0]}"] + [f"  {l}" for l in childs[-1][1:]]
 
 def print_tree(lazydata:LazyOp): print("\n".join([f"{str(i).rjust(3)} {s}" for i,s in enumerate(_tree(lazydata))]))
 
@@ -114,7 +120,13 @@ def graph_uops(uops):
   G = nx.DiGraph()
   for u in uops:
     if u.uop == UOps.END: continue
-    G.add_node(uops.index(u), label=f"{str(u.uop)[5:]}{(' '+str(u.arg)) if u.arg is not None else ''}\n{str(u.dtype)}", style="filled", fillcolor=colors.get(u.uop, "#ffffff"))
+    G.add_node(
+        uops.index(u),
+        label=
+        f"{str(u.uop)[5:]}{f' {str(u.arg)}' if u.arg is not None else ''}\n{str(u.dtype)}",
+        style="filled",
+        fillcolor=colors.get(u.uop, "#ffffff"),
+    )
     for v in u.vin: G.add_edge(uops.index(v), uops.index(u))
   GRAPHPATH = "/tmp/uops"
   nx.drawing.nx_pydot.write_dot(G, f'{GRAPHPATH}.dot')

@@ -41,11 +41,7 @@ def lin_to_feats(lin:Linearizer, use_sts=True):
   all_colors = ["blue", "cyan", "white", "green", "red", "magenta", "yellow"]
   lc = [all_colors.index(x) for x in lin.colors()]
 
-  ret = []
-  # before, some generic linearizer stuff
-  ret.append(lin.upcasted)
-  ret.append(lin.local_dims)
-
+  ret = [lin.upcasted, lin.local_dims]
   # first, the full shape, including the colors
   for s,os,c in zip(lin.full_shape,lin.output_shape,lc):
     if isinstance(s, Node):

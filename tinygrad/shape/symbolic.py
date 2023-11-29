@@ -30,7 +30,8 @@ class Node:
     return [self.substitute(dict(zip(idxs, (NumNode(x) for x in rep)))) for rep in Node.iter_idxs(idxs)]
   @staticmethod
   def iter_idxs(idxs:Tuple[VariableOrNum, ...]) -> Iterator[Tuple[int,...]]:
-    yield from (x[::-1] for x in product(*[[x for x in range(v.min, v.max + 1)] for v in idxs[::-1]]))
+    yield from (x[::-1] for x in product(
+        *[list(range(v.min, v.max + 1)) for v in idxs[::-1]]))
   # substitute Variables with the values in var_vals
   def substitute(self, var_vals: Dict[VariableOrNum, Node]) -> Node: raise RuntimeError(self.__class__.__name__)
   def unbind(self) -> Tuple[Node, Optional[int]]: return self.substitute({v: v.unbind()[0] for v in self.vars() if v.val is not None}), None
@@ -46,12 +47,12 @@ class Node:
   @functools.cached_property
   def hash(self) -> int: return hash(self.key)
   def __repr__(self): return self.render(ctx="REPR")
-  def __str__(self): return "<"+self.key+">"
+  def __str__(self):
+    return f"<{self.key}>"
   def __hash__(self): return self.hash
   def __bool__(self): return not (self.max == self.min == 0)
   def __eq__(self, other:object) -> bool:
-    if not isinstance(other, Node): return NotImplemented
-    return self.key == other.key
+    return NotImplemented if not isinstance(other, Node) else self.key == other.key
   def __neg__(self): return self*-1
   def __add__(self, b:Union[Node,int]): return Variable.sum([self, b if isinstance(b, Node) else Variable.num(b)])
   def __radd__(self, b:int): return self+b
@@ -131,7 +132,9 @@ class Node:
       if node.__class__ is NumNode: num_node_sum += node.b
       else: new_nodes.append(node)
 
-    if len(new_nodes) > 1 and len(set([x.a if isinstance(x, MulNode) else x for x in new_nodes])) < len(new_nodes):
+    if len(new_nodes) > 1 and len(
+        {x.a if isinstance(x, MulNode) else x
+         for x in new_nodes}) < len(new_nodes):
       new_nodes = Node.factorize(new_nodes)
     if num_node_sum: new_nodes.append(NumNode(num_node_sum))
     return create_rednode(SumNode, new_nodes) if len(new_nodes) > 1 else new_nodes[0] if len(new_nodes) == 1 else NumNode(0)
@@ -140,7 +143,7 @@ class Node:
   def ands(nodes:List[Node]) -> Node:
     if not nodes: return NumNode(1)
     if len(nodes) == 1: return nodes[0]
-    if any(not x for x in nodes): return NumNode(0)
+    if not all(nodes): return NumNode(0)
 
     # filter 1s
     nodes = [x for x in nodes if x.min != x.max]
@@ -151,8 +154,7 @@ class Node:
 class Variable(Node):
   def __new__(cls, expr:Optional[str], nmin:int, nmax:int):
     assert nmin >= 0 and nmin <= nmax
-    if nmin == nmax: return NumNode(nmin)
-    return super().__new__(cls)
+    return NumNode(nmin) if nmin == nmax else super().__new__(cls)
 
   def __init__(self, expr:Optional[str], nmin:int, nmax:int):
     self.expr, self.min, self.max = expr, nmin, nmax
@@ -169,7 +171,8 @@ class Variable(Node):
     assert self.val is not None, f"cannot unbind {self}"
     return Variable(self.expr, self.min, self.max), self.val
   def vars(self): return [self]
-  def substitute(self, var_vals: Dict[VariableOrNum, Node]) -> Node: return var_vals[self] if self in var_vals else self
+  def substitute(self, var_vals: Dict[VariableOrNum, Node]) -> Node:
+    return var_vals.get(self, self)
 
 class NumNode(Node):
   def __init__(self, num:int):
@@ -185,8 +188,7 @@ class NumNode(Node):
 
 def create_node(ret:Node):
   assert ret.min <= ret.max, f"min greater than max! {ret.min} {ret.max} when creating {type(ret)} {ret}"
-  if ret.min == ret.max: return NumNode(ret.min)
-  return ret
+  return NumNode(ret.min) if ret.min == ret.max else ret
 
 class OpNode(Node):
   def __init__(self, a:Node, b:Union[Node, int]):
@@ -301,7 +303,7 @@ class SumNode(RedNode):
     lhs: Node = self
     if isinstance(b, int):
       new_sum = []
-      for x in self.nodes:
+      for x in lhs.nodes:
         # TODO: should we just force the last one to always be the number
         if isinstance(x, NumNode): b -= x.b
         else: new_sum.append(x)
@@ -336,8 +338,10 @@ class AndNode(RedNode):
 
 def create_rednode(typ:Type[RedNode], nodes:List[Node]):
   ret = typ(nodes)
-  if typ == SumNode: ret.min, ret.max = (sum([x.min for x in nodes]), sum([x.max for x in nodes]))
-  elif typ == AndNode: ret.min, ret.max = (min([x.min for x in nodes]), max([x.max for x in nodes]))
+  if typ == SumNode:
+    ret.min, ret.max = sum(x.min for x in nodes), sum(x.max for x in nodes)
+  elif typ == AndNode:
+    ret.min, ret.max = min(x.min for x in nodes), max(x.max for x in nodes)
   return create_node(ret)
 
 @functools.lru_cache(maxsize=None)
@@ -354,12 +358,28 @@ sint = Union[Node, int]
 VariableOrNum = Union[Variable, NumNode]
 
 render_python: Dict[Type, Callable] = {
-  Variable: lambda self,ops,ctx: f"{self.expr}[{self.min}-{self.max}{'='+str(self.val) if self._val is not None else ''}]" if ctx == "DEBUG" else (f"Variable('{self.expr}', {self.min}, {self.max})"+(f".bind({self.val})" if self._val is not None else '') if ctx == "REPR" else f"{self.expr}"),
-  NumNode: lambda self,ops,ctx: f"{self.b}",
-  MulNode: lambda self,ops,ctx: f"({self.a.render(ops,ctx)}*{sym_render(self.b,ops,ctx)})",
-  DivNode: lambda self,ops,ctx: f"({self.a.render(ops,ctx)}//{self.b})",
-  ModNode: lambda self,ops,ctx: f"({self.a.render(ops,ctx)}%{self.b})",
-  LtNode: lambda self,ops,ctx: f"({self.a.render(ops,ctx)}<{sym_render(self.b,ops,ctx)})",
-  SumNode: lambda self,ops,ctx: f"({'+'.join(sorted([x.render(ops,ctx) for x in self.nodes]))})",
-  AndNode: lambda self,ops,ctx: f"({' and '.join(sorted([x.render(ops,ctx) for x in self.nodes]))})"
+    Variable:
+    lambda self, ops, ctx:
+    f"{self.expr}[{self.min}-{self.max}{f'={str(self.val)}' if self._val is not None else ''}]"
+    if ctx == "DEBUG" else f"Variable('{self.expr}', {self.min}, {self.max})" +
+    (f".bind({self.val})" if self._val is not None else '')
+    if ctx == "REPR" else f"{self.expr}",
+    NumNode:
+    lambda self, ops, ctx: f"{self.b}",
+    MulNode:
+    lambda self, ops, ctx:
+    f"({self.a.render(ops,ctx)}*{sym_render(self.b,ops,ctx)})",
+    DivNode:
+    lambda self, ops, ctx: f"({self.a.render(ops,ctx)}//{self.b})",
+    ModNode:
+    lambda self, ops, ctx: f"({self.a.render(ops,ctx)}%{self.b})",
+    LtNode:
+    lambda self, ops, ctx:
+    f"({self.a.render(ops,ctx)}<{sym_render(self.b,ops,ctx)})",
+    SumNode:
+    lambda self, ops, ctx:
+    f"({'+'.join(sorted([x.render(ops,ctx) for x in self.nodes]))})",
+    AndNode:
+    lambda self, ops, ctx:
+    f"({' and '.join(sorted([x.render(ops,ctx) for x in self.nodes]))})",
 }

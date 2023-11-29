@@ -101,7 +101,7 @@ class TestSafetensors(unittest.TestCase):
     import struct
     with open(temp('metadata.safetensors'), 'rb') as f:
       dat = f.read()
-    sz = struct.unpack(">Q", dat[0:8])[0]
+    sz = struct.unpack(">Q", dat[:8])[0]
     import json
     assert json.loads(dat[8:8+sz])['__metadata__']['hello'] == 'world'
 
